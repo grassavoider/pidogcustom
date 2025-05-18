@@ -1,0 +1,7 @@
+{
+  "provider": "custom",
+  "api_key": "YOUR_API_KEY_HERE",
+  "model_name": "gpt41",
+  "api_url": "https://vip.jewproxy.tech/proxy/openai",
+  "timeout": 60
+} 

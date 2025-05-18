@@ -1,0 +1,13 @@
+{
+  "character": "",
+  "persona": "",
+  "preset": "",
+  "api_config": {
+    "provider": "",
+    "api_key": "",
+    "api_url": "",
+    "model_name": ""
+  },
+  "input_mode": "",
+  "with_img": true
+}

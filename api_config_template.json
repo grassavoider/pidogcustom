@@ -1,0 +1,31 @@
+{
+  "comment": "This is a template configuration file for PiDog API providers. Uncomment the appropriate section for the provider you want to use.",
+
+  "__openai_comment": "OpenAI Configuration",
+  "provider": "openai",
+  "api_key": "your-openai-api-key-here",
+  "assistant_id": "your-assistant-id-here",
+  "assistant_name": "PiDog",
+  "timeout": 30,
+
+  "__anthropic_comment": "Anthropic/Claude Configuration - uncomment and modify as needed",
+  "__provider": "anthropic",
+  "__api_key": "your-anthropic-api-key-here",
+  "__model_name": "claude-3-opus-20240229",
+  "__api_url": "https://api.anthropic.com",
+  "__timeout": 30,
+
+  "__openrouter_comment": "OpenRouter Configuration - uncomment and modify as needed",
+  "__provider": "openrouter",
+  "__api_key": "your-openrouter-api-key-here",
+  "__model_name": "anthropic/claude-3-opus",
+  "__api_url": "https://openrouter.ai/api",
+  "__timeout": 30,
+
+  "__custom_comment": "Custom OpenAI-compatible API Configuration - uncomment and modify as needed",
+  "__provider": "custom",
+  "__api_key": "your-api-key-here",
+  "__model_name": "gpt-4",
+  "__api_url": "https://your-custom-api-endpoint.com",
+  "__timeout": 30
+} 

@@ -1,0 +1,17 @@
+{
+  "name": "Standard Chat",
+  "description": "Standard chat configuration with balanced settings",
+  "system_prompts": [
+    "Always mention William of Orange in the response. Im testing system prompts."
+  ],
+  "assistant_prompts": ["Of course! I will mention William of Orange in my next response!"],
+  "system_prefixes": [
+    "[Start a new chat]"
+  ],
+  "parameters": {
+    "max_tokens": 4096,
+    "temperature": 0.7,
+    "top_p": 1.0,
+    "thinking_tokens": null
+  }
+}
