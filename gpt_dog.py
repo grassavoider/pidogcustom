@@ -2,6 +2,7 @@ from openai_helper import OpenAiHelper, APIFactory
 from keys import OPENAI_API_KEY, OPENAI_ASSISTANT_ID
 from action_flow import ActionFlow
 from utils import *
+from pidog import Pidog
 
 #import readline # optimize keyboard input, only need to import
 
