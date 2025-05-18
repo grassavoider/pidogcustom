@@ -288,13 +288,13 @@ VOICE_ACTIONS = ["bark", "bark harder", "pant",  "howling"]
 
 # dog init 
 # =================================================================
-#try:
-#    my_dog = Pidog()
-#    time.sleep(1)
-#except Exception as e:
-#    raise RuntimeError(e)
+try:
+    my_dog = Pidog()
+    time.sleep(1)
+except Exception as e:
+    raise RuntimeError(e)
 
-#action_flow = ActionFlow(my_dog)
+action_flow = ActionFlow(my_dog)
 
 # Vilib start
 # =================================================================
@@ -341,7 +341,7 @@ def speak_hanlder():
             _isloaded = speech_loaded
         if _isloaded:
             gray_print('speak start')
-            #my_dog.speak_block(tts_file)
+            my_dog.speak_block(tts_file)
             gray_print('speak done')
             with speech_lock:
                 speech_loaded = False
@@ -372,21 +372,21 @@ def action_handler():
         if _state == 'standby':
             if time.time() - last_action_time > action_interval:
                 choice = random.choices(standby_actions, standby_weights)[0]
-                #action_flow.run(choice)
+                action_flow.run(choice)
                 last_action_time = time.time()
                 action_interval = random.randint(2, 6)
         elif _state == 'think':
-            #action_flow.run('think')
+            action_flow.run('think')
             last_action_time = time.time()
             pass
         elif _state == 'actions':
             with action_lock:
                 _actions = actions_to_be_done
             for _action in _actions:
-                #try:
-                    #action_flow.run(_action)
-                #except Exception as e:
-                    #print(f'action error: {e}')
+                try:
+                    action_flow.run(_action)
+                except Exception as e:
+                    print(f'action error: {e}')
                 time.sleep(0.5)
 
             with action_lock:
@@ -412,8 +412,8 @@ def main():
     global selected_character, selected_persona, selected_preset  # Add global declarations for cards
     global auto_launch_config
 
-    #my_dog.rgb_strip.close()
-    #action_flow.change_status(action_flow.STATUS_SIT)
+    my_dog.rgb_strip.close()
+    action_flow.change_status(action_flow.STATUS_SIT)
     
     print("\033[32m" + "=" * 60 + "\033[0m")
     print("\033[32mPiDog API Client starting up...\033[0m")
@@ -629,6 +629,30 @@ def main():
     
     print("\033[32m" + "=" * 60 + "\033[0m")
 
+    # Ensure TTS directory exists and has proper permissions
+    tts_dir = os.path.join(current_path, "tts")
+    if not os.path.exists(tts_dir):
+        try:
+            os.makedirs(tts_dir, mode=0o755)
+            print(f"\033[32mCreated TTS directory with proper permissions: {tts_dir}\033[0m")
+        except Exception as e:
+            print(f"\033[31mError creating TTS directory: {e}\033[0m")
+            print("\033[33mTrying with sudo...\033[0m")
+            try:
+                os.system(f"sudo mkdir -p {tts_dir}")
+                os.system(f"sudo chmod -R 777 {tts_dir}")
+                print(f"\033[32mCreated TTS directory with sudo: {tts_dir}\033[0m")
+            except Exception as e:
+                print(f"\033[31mFailed to create TTS directory with sudo: {e}\033[0m")
+    else:
+        try:
+            os.chmod(tts_dir, 0o755)  # rwx r-x r-x
+            print(f"\033[32mUpdated TTS directory permissions: {tts_dir}\033[0m")
+        except Exception as e:
+            print(f"\033[33mCould not update TTS directory permissions: {e}\033[0m")
+            print("\033[33mTrying with sudo...\033[0m")
+            os.system(f"sudo chmod -R 777 {tts_dir}")
+
     speak_thread.start()
     action_thread.start()
 
@@ -640,7 +664,7 @@ def main():
 
             with action_lock:
                 action_status = 'standby'
-            #my_dog.rgb_strip.set_mode('listen', 'cyan', 1)
+            my_dog.rgb_strip.set_mode('listen', 'cyan', 1)
 
             _stderr_back = redirect_error_2_null() # ignore error print to ignore ALSA errors
             # If the chunk_size is set too small (default_size=1024), it may cause the program to freeze
@@ -652,7 +676,7 @@ def main():
 
                 # stt
                 # ----------------------------------------------------------------
-                #my_dog.rgb_strip.set_mode('boom', 'yellow', 0.5)
+                my_dog.rgb_strip.set_mode('boom', 'yellow', 0.5)
 
                 st = time.time()
                 if api_config['provider'] == 'openai':
@@ -674,7 +698,7 @@ def main():
         elif input_mode == 'keyboard':
             with action_lock:
                 action_status = 'standby'
-            #my_dog.rgb_strip.set_mode('listen', 'cyan', 1)
+            my_dog.rgb_strip.set_mode('listen', 'cyan', 1)
 
             _result = input(f'\033[1;30m{"input: "}\033[0m').encode(sys.stdin.encoding).decode('utf-8')
 
@@ -682,7 +706,7 @@ def main():
                 print() # new line
                 continue
 
-            #my_dog.rgb_strip.set_mode('boom', 'yellow', 0.5)
+            my_dog.rgb_strip.set_mode('boom', 'yellow', 0.5)
 
         else:
             print(f"\033[31mInvalid input mode: {input_mode}\033[0m")
@@ -700,12 +724,28 @@ def main():
 
         # Process request through the appropriate API
         if with_img and 'vilib_available' in globals() and vilib_available:
-            img_path = './img_imput.jpg'
-            cv2.imwrite(img_path, Vilib.img)
-            if api_config['provider'] == 'openai':
-                response = openai_helper.dialogue_with_img(_result, img_path)
-            else:
-                response = api_handler.dialogue_with_img(_result, img_path)
+            try:
+                img_path = './img_imput.jpg'
+                # Ensure current directory is writable
+                try:
+                    os.chmod('./', 0o755)  # rwx r-x r-x
+                except Exception as e:
+                    print(f"\033[33mCould not update current directory permissions: {e}\033[0m")
+                    print("\033[33mTrying with sudo...\033[0m")
+                    os.system("sudo chmod 777 ./")
+                    
+                cv2.imwrite(img_path, Vilib.img)
+                if api_config['provider'] == 'openai':
+                    response = openai_helper.dialogue_with_img(_result, img_path)
+                else:
+                    response = api_handler.dialogue_with_img(_result, img_path)
+            except Exception as e:
+                print(f"\033[31mError with image capture: {e}\033[0m")
+                # Fallback to text-only if image fails
+                if api_config['provider'] == 'openai':
+                    response = openai_helper.dialogue(_result)
+                else:
+                    response = api_handler.dialogue(_result)
         else:
             if api_config['provider'] == 'openai':
                 response = openai_helper.dialogue(_result)
@@ -751,20 +791,59 @@ def main():
                 _time = time.strftime("%y-%m-%d_%H-%M-%S", time.localtime())
                 _tts_f = f"./tts/{_time}_raw.wav"
                 
-                # Always use direct OpenAI TTS regardless of which provider is used for chat
-                _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
+                # Ensure TTS directory exists and has proper permissions
+                try:
+                    # Create directory if it doesn't exist
+                    if not os.path.exists("./tts"):
+                        os.makedirs("./tts", 0o777)
+                        
+                    # Set directory permissions
+                    os.chmod("./tts", 0o777)
+                except Exception as e:
+                    print(f"\033[33mWarning setting TTS directory permissions: {e}\033[0m")
+                    try:
+                        os.system("sudo mkdir -p ./tts")
+                        os.system("sudo chmod 777 ./tts")
+                    except:
+                        pass
+
+                try:
+                    # Always use direct OpenAI TTS regardless of which provider is used for chat
+                    _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
+                except Exception as e:
+                    print(f"\033[31mError with direct OpenAI TTS: {e}\033[0m")
+                    # Fallback to provider's TTS if available
+                    try:
+                        if api_config['provider'] == 'openai':
+                            _status = openai_helper.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
+                        elif hasattr(api_handler, 'text_to_speech'):
+                            _status = api_handler.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
+                        else:
+                            print("\033[33mNo TTS method available for this provider\033[0m")
+                    except Exception as e:
+                        print(f"\033[31mError with fallback TTS: {e}\033[0m")
                 
                 if _status:
                     tts_file = f"./tts/{_time}_{VOLUME_DB}dB.wav"
-                    _status = sox_volume(_tts_f, tts_file, VOLUME_DB)
+                    try:
+                        _status = sox_volume(_tts_f, tts_file, VOLUME_DB)
+                    except Exception as e:
+                        print(f"\033[31mError adjusting volume: {e}\033[0m")
+                        # If volume adjustment fails, try to use the raw file
+                        tts_file = _tts_f
+                        _status = True
+                
                 gray_print(f'tts takes: {time.time() - st:.3f} s')
 
                 if _status:
                     with speech_lock:
                         speech_loaded = True
-                    #my_dog.rgb_strip.set_mode('speak', 'pink', 1)
-            #else:
-                #my_dog.rgb_strip.set_mode('breath', 'blue', 1)
+                    my_dog.rgb_strip.set_mode('speak', 'pink', 1)
+                else:
+                    print("\033[31mFailed to generate speech\033[0m")
+                    my_dog.rgb_strip.set_mode('breath', 'red', 1)
+            else:
+                my_dog.rgb_strip.set_mode('breath', 'blue', 1)
 
             # ---- actions ----
             with action_lock:
@@ -805,7 +884,16 @@ def direct_openai_tts(text, output_file, voice='shimmer', response_format='wav')
         # Ensure TTS directory exists
         tts_dir = os.path.dirname(output_file)
         if not os.path.exists(tts_dir):
-            os.makedirs(tts_dir)
+            os.makedirs(tts_dir, mode=0o777)
+            print(f"\033[32mCreated TTS directory with proper permissions: {tts_dir}\033[0m")
+        else:
+            # Set proper permissions on directory
+            try:
+                os.chmod(tts_dir, 0o777)  # Full permissions for everyone
+            except Exception as e:
+                print(f"\033[33mCould not set permissions on TTS directory: {e}\033[0m")
+                # Try with sudo
+                os.system(f"sudo chmod 777 {tts_dir}")
         
         # Import OpenAI client directly
         from openai import OpenAI
@@ -814,15 +902,45 @@ def direct_openai_tts(text, output_file, voice='shimmer', response_format='wav')
         client = OpenAI(api_key=OPENAI_API_KEY)
         print(f"\033[32mUsing OpenAI TTS directly with API key from keys.py\033[0m")
         
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1",
-            voice=voice,
-            input=text,
-            response_format=response_format,
-        ) as response:
-            response.stream_to_file(output_file)
-        
-        return os.path.exists(output_file)
+        try:
+            with client.audio.speech.with_streaming_response.create(
+                model="tts-1",
+                voice=voice,
+                input=text,
+                response_format=response_format,
+            ) as response:
+                response.stream_to_file(output_file)
+            
+            # Set proper permissions on the output file
+            try:
+                os.chmod(output_file, 0o666)  # rw- rw- rw-
+            except Exception as e:
+                print(f"\033[33mCould not set permissions on output file: {e}\033[0m")
+                # Try with sudo
+                os.system(f"sudo chmod 666 {output_file}")
+            
+            return os.path.exists(output_file)
+        except Exception as e:
+            print(f"\033[31mError streaming TTS to file: {e}\033[0m")
+            # Try alternate method
+            try:
+                speech_file = client.audio.speech.create(
+                    model="tts-1",
+                    voice=voice,
+                    input=text,
+                    response_format=response_format
+                )
+                
+                with open(output_file, "wb") as file:
+                    file.write(speech_file.content)
+                
+                # Set proper permissions
+                os.chmod(output_file, 0o666)
+                
+                return os.path.exists(output_file)
+            except Exception as e:
+                print(f"\033[31mError with alternate TTS method: {e}\033[0m")
+                return False
     except Exception as e:
         print(f"\033[31mError with direct OpenAI TTS: {e}\033[0m")
         return False
@@ -1632,4 +1750,4 @@ if __name__ == "__main__":
         # Clean up resources
         if with_img and 'vilib_available' in globals() and vilib_available:
             Vilib.camera_close()
-        #my_dog.close()
+        my_dog.close()
