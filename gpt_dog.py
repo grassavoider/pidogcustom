@@ -319,6 +319,10 @@ if with_img:
         print("\033[33mWARNING: Vilib module not found. Running without camera support.\033[0m")
         with_img = False
         vilib_available = False
+    except Exception as e:
+        print(f"\033[33mWARNING: Error initializing Vilib: {e}. Running without camera support.\033[0m")
+        with_img = False
+        vilib_available = False
 
 # PyAudio and speech recognition setup
 # =================================================================
@@ -377,8 +381,8 @@ def action_handler():
                 last_action_time = time.time()
                 action_interval = random.randint(2, 6)
         elif _state == 'think':
-            action_flow.run('think')
-            last_action_time = time.time()
+            # action_flow.run('think')
+            # last_action_time = time.time()
             pass
         elif _state == 'actions':
             with action_lock:
@@ -630,30 +634,6 @@ def main():
     
     print("\033[32m" + "=" * 60 + "\033[0m")
 
-    # Ensure TTS directory exists and has proper permissions
-    tts_dir = os.path.join(current_path, "tts")
-    if not os.path.exists(tts_dir):
-        try:
-            os.makedirs(tts_dir, mode=0o755)
-            print(f"\033[32mCreated TTS directory with proper permissions: {tts_dir}\033[0m")
-        except Exception as e:
-            print(f"\033[31mError creating TTS directory: {e}\033[0m")
-            print("\033[33mTrying with sudo...\033[0m")
-            try:
-                os.system(f"sudo mkdir -p {tts_dir}")
-                os.system(f"sudo chmod -R 777 {tts_dir}")
-                print(f"\033[32mCreated TTS directory with sudo: {tts_dir}\033[0m")
-            except Exception as e:
-                print(f"\033[31mFailed to create TTS directory with sudo: {e}\033[0m")
-    else:
-        try:
-            os.chmod(tts_dir, 0o755)  # rwx r-x r-x
-            print(f"\033[32mUpdated TTS directory permissions: {tts_dir}\033[0m")
-        except Exception as e:
-            print(f"\033[33mCould not update TTS directory permissions: {e}\033[0m")
-            print("\033[33mTrying with sudo...\033[0m")
-            os.system(f"sudo chmod -R 777 {tts_dir}")
-
     speak_thread.start()
     action_thread.start()
 
@@ -727,14 +707,6 @@ def main():
         if with_img and 'vilib_available' in globals() and vilib_available:
             try:
                 img_path = './img_imput.jpg'
-                # Ensure current directory is writable
-                try:
-                    os.chmod('./', 0o755)  # rwx r-x r-x
-                except Exception as e:
-                    print(f"\033[33mCould not update current directory permissions: {e}\033[0m")
-                    print("\033[33mTrying with sudo...\033[0m")
-                    os.system("sudo chmod 777 ./")
-                    
                 cv2.imwrite(img_path, Vilib.img)
                 if api_config['provider'] == 'openai':
                     response = openai_helper.dialogue_with_img(_result, img_path)
@@ -792,35 +764,23 @@ def main():
                 _time = time.strftime("%y-%m-%d_%H-%M-%S", time.localtime())
                 _tts_f = f"./tts/{_time}_raw.wav"
                 
-                # Ensure TTS directory exists and has proper permissions
-                try:
-                    # Create directory if it doesn't exist
-                    if not os.path.exists("./tts"):
-                        os.makedirs("./tts", 0o777)
-                        
-                    # Set directory permissions
-                    os.chmod("./tts", 0o777)
-                except Exception as e:
-                    print(f"\033[33mWarning setting TTS directory permissions: {e}\033[0m")
-                    try:
-                        os.system("sudo mkdir -p ./tts")
-                        os.system("sudo chmod 777 ./tts")
-                    except:
-                        pass
+                # Ensure TTS directory exists
+                if not os.path.exists("./tts"):
+                    os.makedirs("./tts")
 
                 try:
-                    # Always use direct OpenAI TTS regardless of which provider is used for chat
-                    _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
+                    if api_config['provider'] == 'openai':
+                        _status = openai_helper.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
+                    elif hasattr(api_handler, 'text_to_speech'):
+                        _status = api_handler.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
+                    else:
+                        # Fallback to direct OpenAI TTS for other providers
+                        _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
                 except Exception as e:
-                    print(f"\033[31mError with direct OpenAI TTS: {e}\033[0m")
-                    # Fallback to provider's TTS if available
+                    print(f"\033[31mError with TTS: {e}\033[0m")
+                    # Try fallback to direct OpenAI TTS
                     try:
-                        if api_config['provider'] == 'openai':
-                            _status = openai_helper.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
-                        elif hasattr(api_handler, 'text_to_speech'):
-                            _status = api_handler.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
-                        else:
-                            print("\033[33mNo TTS method available for this provider\033[0m")
+                        _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
                     except Exception as e:
                         print(f"\033[31mError with fallback TTS: {e}\033[0m")
                 
@@ -885,23 +845,13 @@ def direct_openai_tts(text, output_file, voice='shimmer', response_format='wav')
         # Ensure TTS directory exists
         tts_dir = os.path.dirname(output_file)
         if not os.path.exists(tts_dir):
-            os.makedirs(tts_dir, mode=0o777)
-            print(f"\033[32mCreated TTS directory with proper permissions: {tts_dir}\033[0m")
-        else:
-            # Set proper permissions on directory
-            try:
-                os.chmod(tts_dir, 0o777)  # Full permissions for everyone
-            except Exception as e:
-                print(f"\033[33mCould not set permissions on TTS directory: {e}\033[0m")
-                # Try with sudo
-                os.system(f"sudo chmod 777 {tts_dir}")
+            os.makedirs(tts_dir)
         
         # Import OpenAI client directly
         from openai import OpenAI
         
         # Use OpenAI client directly for TTS with OPENAI_API_KEY from keys.py
         client = OpenAI(api_key=OPENAI_API_KEY)
-        print(f"\033[32mUsing OpenAI TTS directly with API key from keys.py\033[0m")
         
         try:
             with client.audio.speech.with_streaming_response.create(
@@ -911,14 +861,6 @@ def direct_openai_tts(text, output_file, voice='shimmer', response_format='wav')
                 response_format=response_format,
             ) as response:
                 response.stream_to_file(output_file)
-            
-            # Set proper permissions on the output file
-            try:
-                os.chmod(output_file, 0o666)  # rw- rw- rw-
-            except Exception as e:
-                print(f"\033[33mCould not set permissions on output file: {e}\033[0m")
-                # Try with sudo
-                os.system(f"sudo chmod 666 {output_file}")
             
             return os.path.exists(output_file)
         except Exception as e:
@@ -934,9 +876,6 @@ def direct_openai_tts(text, output_file, voice='shimmer', response_format='wav')
                 
                 with open(output_file, "wb") as file:
                     file.write(speech_file.content)
-                
-                # Set proper permissions
-                os.chmod(output_file, 0o666)
                 
                 return os.path.exists(output_file)
             except Exception as e:
