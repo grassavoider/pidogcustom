@@ -157,7 +157,7 @@ class OpenAIHandler(APIHandler):
 
 
     def dialogue_with_img(self, msg, img_path):
-        chat_print(f"user", msg)
+        chat_print("user", msg)
 
         img_file = self.client.files.create(
                     file=open(img_path, "rb"),
@@ -319,6 +319,51 @@ class AnthropicHandler(APIHandler):
             "max_tokens": 1024
         }
         
+        # LOG THE FULL REQUEST WITH IMAGE
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        print("\033[35m🖼️ FULL API REQUEST DEBUG (WITH IMAGE)\033[0m")
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        print(f"\033[35mURL: {self.base_url}/v1/messages\033[0m")
+        print(f"\033[35mModel: {self.model_name}\033[0m")
+        print(f"\033[35mTotal messages: {len(self.conversation_history)}\033[0m")
+        print(f"\033[35mImage file: {img_path}\033[0m")
+        print(f"\033[35mImage size: {len(base64_image)} chars (base64)\033[0m")
+        print("\033[35m" + "-" * 60 + "\033[0m")
+        
+        # Log each message with index and details
+        for i, message in enumerate(self.conversation_history):
+            print(f"\033[35mMessage {i}:\033[0m")
+            print(f"  Role: {message['role']}")
+            content = message['content']
+            if isinstance(content, str):
+                print(f"  Content (string): {content[:100]}{'...' if len(content) > 100 else ''}")
+            elif isinstance(content, list):
+                print(f"  Content (list): {len(content)} items")
+                for j, item in enumerate(content):
+                    if item.get('type') == 'image':
+                        print(f"    Item {j}: image - [BASE64 IMAGE DATA TRUNCATED]")
+                    else:
+                        print(f"    Item {j}: {type(item)} - {str(item)[:50]}{'...' if len(str(item)) > 50 else ''}")
+            else:
+                print(f"  Content (other): {type(content)} - {str(content)[:100]}{'...' if len(str(content)) > 100 else ''}")
+            print()
+        
+        print("\033[35m" + "-" * 60 + "\033[0m")
+        print("\033[35mPayload structure (image data truncated):\033[0m")
+        
+        # Create a copy of payload with truncated image data for logging
+        import json
+        import copy
+        log_payload = copy.deepcopy(payload)
+        for message in log_payload['messages']:
+            if isinstance(message['content'], list):
+                for item in message['content']:
+                    if item.get('type') == 'image':
+                        item['source']['data'] = item['source']['data'][:100] + "...[TRUNCATED]"
+        
+        print(json.dumps(log_payload, indent=2, ensure_ascii=False))
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        
         try:
             response = self._make_request("v1/messages", payload)
             assistant_msg = response.get("content", [{}])[0].get("text", "")
@@ -435,6 +480,51 @@ class OpenRouterHandler(APIHandler):
             "allow_fallbacks": True
         }
         
+        # LOG THE FULL REQUEST WITH IMAGE
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        print("\033[35m🖼️ FULL API REQUEST DEBUG (WITH IMAGE)\033[0m")
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        print(f"\033[35mURL: {self.base_url}/v1/chat/completions\033[0m")
+        print(f"\033[35mModel: {self.model_name}\033[0m")
+        print(f"\033[35mTotal messages: {len(self.conversation_history)}\033[0m")
+        print(f"\033[35mImage file: {img_path}\033[0m")
+        print(f"\033[35mImage size: {len(base64_image)} chars (base64)\033[0m")
+        print("\033[35m" + "-" * 60 + "\033[0m")
+        
+        # Log each message with index and details
+        for i, message in enumerate(self.conversation_history):
+            print(f"\033[35mMessage {i}:\033[0m")
+            print(f"  Role: {message['role']}")
+            content = message['content']
+            if isinstance(content, str):
+                print(f"  Content (string): {content[:100]}{'...' if len(content) > 100 else ''}")
+            elif isinstance(content, list):
+                print(f"  Content (list): {len(content)} items")
+                for j, item in enumerate(content):
+                    if item.get('type') == 'image_url':
+                        print(f"    Item {j}: image_url - [BASE64 IMAGE DATA TRUNCATED]")
+                    else:
+                        print(f"    Item {j}: {type(item)} - {str(item)[:50]}{'...' if len(str(item)) > 50 else ''}")
+            else:
+                print(f"  Content (other): {type(content)} - {str(content)[:100]}{'...' if len(str(content)) > 100 else ''}")
+            print()
+        
+        print("\033[35m" + "-" * 60 + "\033[0m")
+        print("\033[35mPayload structure (image data truncated):\033[0m")
+        
+        # Create a copy of payload with truncated image data for logging
+        import json
+        import copy
+        log_payload = copy.deepcopy(payload)
+        for message in log_payload['messages']:
+            if isinstance(message['content'], list):
+                for item in message['content']:
+                    if item.get('type') == 'image_url':
+                        item['image_url']['url'] = item['image_url']['url'][:100] + "...[TRUNCATED]"
+        
+        print(json.dumps(log_payload, indent=2, ensure_ascii=False))
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        
         try:
             response = self._make_request("v1/chat/completions", payload)
             assistant_msg = response.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -534,6 +624,36 @@ class CustomAPIHandler(APIHandler):
             "max_tokens": 1024
         }
         
+        # LOG THE FULL REQUEST
+        print("\033[36m" + "=" * 60 + "\033[0m")
+        print("\033[36m🔍 FULL API REQUEST DEBUG\033[0m")
+        print("\033[36m" + "=" * 60 + "\033[0m")
+        print(f"\033[36mURL: {self.api_url}/v1/chat/completions\033[0m")
+        print(f"\033[36mModel: {self.model_name}\033[0m")
+        print(f"\033[36mTotal messages: {len(self.conversation_history)}\033[0m")
+        print("\033[36m" + "-" * 60 + "\033[0m")
+        
+        # Log each message with index and details
+        for i, message in enumerate(self.conversation_history):
+            print(f"\033[36mMessage {i}:\033[0m")
+            print(f"  Role: {message['role']}")
+            content = message['content']
+            if isinstance(content, str):
+                print(f"  Content (string): {content[:100]}{'...' if len(content) > 100 else ''}")
+            elif isinstance(content, list):
+                print(f"  Content (list): {len(content)} items")
+                for j, item in enumerate(content):
+                    print(f"    Item {j}: {type(item)} - {str(item)[:50]}{'...' if len(str(item)) > 50 else ''}")
+            else:
+                print(f"  Content (other): {type(content)} - {str(content)[:100]}{'...' if len(str(content)) > 100 else ''}")
+            print()
+        
+        print("\033[36m" + "-" * 60 + "\033[0m")
+        print("\033[36mFull payload JSON:\033[0m")
+        import json
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        print("\033[36m" + "=" * 60 + "\033[0m")
+        
         try:
             response = self._make_request("v1/chat/completions", payload)
             # Debug the response
@@ -583,6 +703,51 @@ class CustomAPIHandler(APIHandler):
             "messages": self.conversation_history,
             "max_tokens": 1024
         }
+        
+        # LOG THE FULL REQUEST WITH IMAGE
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        print("\033[35m🖼️ FULL API REQUEST DEBUG (WITH IMAGE)\033[0m")
+        print("\033[35m" + "=" * 60 + "\033[0m")
+        print(f"\033[35mURL: {self.api_url}/v1/chat/completions\033[0m")
+        print(f"\033[35mModel: {self.model_name}\033[0m")
+        print(f"\033[35mTotal messages: {len(self.conversation_history)}\033[0m")
+        print(f"\033[35mImage file: {img_path}\033[0m")
+        print(f"\033[35mImage size: {len(base64_image)} chars (base64)\033[0m")
+        print("\033[35m" + "-" * 60 + "\033[0m")
+        
+        # Log each message with index and details
+        for i, message in enumerate(self.conversation_history):
+            print(f"\033[35mMessage {i}:\033[0m")
+            print(f"  Role: {message['role']}")
+            content = message['content']
+            if isinstance(content, str):
+                print(f"  Content (string): {content[:100]}{'...' if len(content) > 100 else ''}")
+            elif isinstance(content, list):
+                print(f"  Content (list): {len(content)} items")
+                for j, item in enumerate(content):
+                    if item.get('type') == 'image_url':
+                        print(f"    Item {j}: image_url - [BASE64 IMAGE DATA TRUNCATED]")
+                    else:
+                        print(f"    Item {j}: {type(item)} - {str(item)[:50]}{'...' if len(str(item)) > 50 else ''}")
+            else:
+                print(f"  Content (other): {type(content)} - {str(content)[:100]}{'...' if len(str(content)) > 100 else ''}")
+            print()
+        
+        print("\033[35m" + "-" * 60 + "\033[0m")
+        print("\033[35mPayload structure (image data truncated):\033[0m")
+        
+        # Create a copy of payload with truncated image data for logging
+        import json
+        import copy
+        log_payload = copy.deepcopy(payload)
+        for message in log_payload['messages']:
+            if isinstance(message['content'], list):
+                for item in message['content']:
+                    if item.get('type') == 'image_url':
+                        item['image_url']['url'] = item['image_url']['url'][:100] + "...[TRUNCATED]"
+        
+        print(json.dumps(log_payload, indent=2, ensure_ascii=False))
+        print("\033[35m" + "=" * 60 + "\033[0m")
         
         try:
             response = self._make_request("v1/chat/completions", payload)

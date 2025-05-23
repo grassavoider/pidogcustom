@@ -81,6 +81,7 @@ parser = argparse.ArgumentParser(description='PiDog with configurable API')
 
 parser.add_argument('--keyboard', action='store_true', help='Use keyboard input instead of voice')
 parser.add_argument('--no-img', action='store_true', help='Disable image capture and processing')
+parser.add_argument('--no-audio', action='store_true', help='Disable audio playback (TTS will still generate files)')
 
 # API Provider configuration
 parser.add_argument('--provider', type=str, default='openai', 
@@ -212,6 +213,7 @@ def find_preset_by_name(name):
 if args.keyboard:
     input_mode = 'keyboard'  # Override with explicit keyboard flag
 with_img = not args.no_img
+with_audio = not args.no_audio  # Add audio configuration
 
 # Determine if we should use interactive setup
 use_interactive = True  # Default to interactive mode
@@ -342,8 +344,29 @@ def speak_hanlder():
             _isloaded = speech_loaded
         if _isloaded:
             gray_print('speak start')
-            my_dog.speak_block(tts_file)
-            gray_print('speak done')
+            
+            # Check if audio is disabled
+            if not with_audio:
+                gray_print('speak skipped (audio disabled)')
+                with speech_lock:
+                    speech_loaded = False
+                time.sleep(0.05)
+                continue
+            
+            # Try to play audio through PiDog (original method)
+            try:
+                my_dog.speak_block(tts_file)
+                gray_print('speak done')
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "sudo" in error_msg or "permission" in error_msg:
+                    print(f"\033[33mAudio permission issue: {e}\033[0m")
+                    print("\033[33mTry running with: sudo python3 gpt_dog.py\033[0m")
+                    print("\033[33mOr disable audio with: --no-audio\033[0m")
+                else:
+                    print(f"\033[31mAudio playback error: {e}\033[0m")
+                gray_print('speak failed')
+            
             with speech_lock:
                 speech_loaded = False
         time.sleep(0.05)
@@ -620,6 +643,7 @@ def main():
     
     # Print setup information
     print(f"\033[32mInput Mode: {input_mode}\033[0m")
+    print(f"\033[32mAudio Playback: {'Enabled' if with_audio else 'Disabled'}\033[0m")
     
     if not speech_recognition_available:
         print("\033[33mNOTE: Voice input is not available because PyAudio is not installed.\033[0m")
@@ -816,9 +840,13 @@ def main():
                 _time = time.strftime("%y-%m-%d_%H-%M-%S", time.localtime())
                 _tts_f = f"./tts/{_time}_raw.wav"
                 
-                # Simple TTS call without complex permission handling
+                # Use the original working TTS method for OpenAI
                 try:
-                    _status = simple_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
+                    if api_config['provider'] == 'openai':
+                        _status = openai_helper.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
+                    else:
+                        # For non-OpenAI providers, use our custom TTS
+                        _status = simple_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
                 except Exception as e:
                     print(f"\033[31mError with TTS: {e}\033[0m")
                 
@@ -1770,6 +1798,44 @@ def test_functionality():
     else:
         print("\033[33m⚠ Image capture disabled\033[0m")
     
+    # Test audio playback capability
+    try:
+        import subprocess
+        import platform
+        system = platform.system().lower()
+        
+        audio_available = False
+        if system == "linux":
+            # Test for common Linux audio utilities
+            for cmd in ['aplay', 'paplay', 'sox']:
+                try:
+                    result = subprocess.run([cmd, '--help'], capture_output=True, timeout=2)
+                    if result.returncode == 0 or 'aplay' in result.stderr.decode().lower():
+                        audio_available = True
+                        print(f"\033[32m✓ Audio player available: {cmd}\033[0m")
+                        break
+                except:
+                    continue
+        elif system == "darwin":
+            # macOS has afplay built-in
+            try:
+                result = subprocess.run(['afplay', '--help'], capture_output=True, timeout=2)
+                audio_available = True
+                print("\033[32m✓ Audio player available: afplay (macOS)\033[0m")
+            except:
+                pass
+        elif system == "windows":
+            # Windows has built-in audio via PowerShell
+            audio_available = True
+            print("\033[32m✓ Audio player available: PowerShell (Windows)\033[0m")
+        
+        if not audio_available:
+            print("\033[33m⚠ No audio players found - install alsa-utils or sox\033[0m")
+            print("\033[33m  If PiDog audio fails, run with: sudo python3 gpt_dog.py\033[0m")
+            
+    except Exception as e:
+        print(f"\033[33m⚠ Could not test audio capability: {e}\033[0m")
+    
     print("\033[32m" + "=" * 40 + "\033[0m\n")
 
 # Helper function to install FLAC if needed
@@ -1822,6 +1888,62 @@ def install_flac_if_needed():
         print("\033[33m  macOS: brew install flac\033[0m")
     elif system == "windows":
         print("\033[33m  Windows: Download from https://xiph.org/flac/download.html\033[0m")
+    
+    return False
+
+# Alternative audio playback function
+# =================================================================
+def try_alternative_audio_playback(audio_file):
+    """Try alternative audio playback methods when PiDog audio requires sudo"""
+    import subprocess
+    import platform
+    
+    if not os.path.exists(audio_file):
+        print(f"\033[31mAudio file not found: {audio_file}\033[0m")
+        return False
+    
+    system = platform.system().lower()
+    
+    # Try different audio players based on the system
+    audio_players = []
+    
+    if system == "linux":
+        # Linux audio players (in order of preference)
+        audio_players = [
+            ['aplay', audio_file],           # ALSA player
+            ['paplay', audio_file],          # PulseAudio player  
+            ['sox', audio_file, '-d'],       # SoX play to default output
+            ['mplayer', audio_file],         # MPlayer
+            ['mpg123', audio_file],          # mpg123 (if converted to mp3)
+        ]
+    elif system == "darwin":  # macOS
+        audio_players = [
+            ['afplay', audio_file],          # macOS built-in player
+            ['sox', audio_file, '-d'],       # SoX
+        ]
+    elif system == "windows":
+        # Windows audio players
+        audio_players = [
+            ['powershell', '-c', f'(New-Object Media.SoundPlayer "{audio_file}").PlaySync()'],
+        ]
+    
+    # Try each audio player
+    for player_cmd in audio_players:
+        try:
+            result = subprocess.run(player_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                print(f"\033[32mAudio played successfully with: {player_cmd[0]}\033[0m")
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+            # This player is not available or failed, try the next one
+            continue
+    
+    # If all players failed, show helpful message
+    print("\033[33mNo working audio player found. Install one of these:\033[0m")
+    if system == "linux":
+        print("\033[33m  sudo apt-get install alsa-utils sox mplayer\033[0m")
+    elif system == "darwin":
+        print("\033[33m  brew install sox\033[0m")
     
     return False
 
