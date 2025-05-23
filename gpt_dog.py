@@ -353,19 +353,9 @@ def speak_hanlder():
                 time.sleep(0.05)
                 continue
             
-            # Try to play audio through PiDog (original method)
-            try:
-                my_dog.speak_block(tts_file)
-                gray_print('speak done')
-            except Exception as e:
-                error_msg = str(e).lower()
-                if "sudo" in error_msg or "permission" in error_msg:
-                    print(f"\033[33mAudio permission issue: {e}\033[0m")
-                    print("\033[33mTry running with: sudo python3 gpt_dog.py\033[0m")
-                    print("\033[33mOr disable audio with: --no-audio\033[0m")
-                else:
-                    print(f"\033[31mAudio playback error: {e}\033[0m")
-                gray_print('speak failed')
+            # Simple audio playback like the original
+            my_dog.speak_block(tts_file)
+            gray_print('speak done')
             
             with speech_lock:
                 speech_loaded = False

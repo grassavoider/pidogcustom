@@ -685,14 +685,37 @@ class CustomAPIHandler(APIHandler):
         with open(img_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
         
-        # Format dependent on API compatibility
-        user_message = {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": msg},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-            ]
-        }
+        # Detect if this is a Google AI/Gemini endpoint and format accordingly
+        is_gemini = ('google' in self.api_url.lower() or 
+                    'gemini' in self.model_name.lower() or
+                    'models/' in self.model_name)
+        
+        if is_gemini:
+            # Format for Google Gemini API
+            user_message = {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": msg},
+                    {
+                        "type": "inline_data",
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": base64_image  # No data:image/jpeg;base64, prefix for Gemini
+                        }
+                    }
+                ]
+            }
+            print(f"\033[35m🤖 Using GEMINI image format\033[0m")
+        else:
+            # Format for OpenAI-compatible APIs
+            user_message = {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": msg},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                ]
+            }
+            print(f"\033[35m🤖 Using OPENAI image format\033[0m")
         
         # Add to conversation history
         self.conversation_history.append(user_message)
@@ -706,13 +729,14 @@ class CustomAPIHandler(APIHandler):
         
         # LOG THE FULL REQUEST WITH IMAGE
         print("\033[35m" + "=" * 60 + "\033[0m")
-        print("\033[35m🖼️ FULL API REQUEST DEBUG (WITH IMAGE)\033[0m")
+        print(f"\033[35m🖼️ FULL API REQUEST DEBUG (WITH IMAGE) - {'GEMINI' if is_gemini else 'OPENAI'} FORMAT\033[0m")
         print("\033[35m" + "=" * 60 + "\033[0m")
         print(f"\033[35mURL: {self.api_url}/v1/chat/completions\033[0m")
         print(f"\033[35mModel: {self.model_name}\033[0m")
         print(f"\033[35mTotal messages: {len(self.conversation_history)}\033[0m")
         print(f"\033[35mImage file: {img_path}\033[0m")
         print(f"\033[35mImage size: {len(base64_image)} chars (base64)\033[0m")
+        print(f"\033[35mAPI Format: {'Gemini/Google AI' if is_gemini else 'OpenAI-compatible'}\033[0m")
         print("\033[35m" + "-" * 60 + "\033[0m")
         
         # Log each message with index and details
@@ -725,8 +749,8 @@ class CustomAPIHandler(APIHandler):
             elif isinstance(content, list):
                 print(f"  Content (list): {len(content)} items")
                 for j, item in enumerate(content):
-                    if item.get('type') == 'image_url':
-                        print(f"    Item {j}: image_url - [BASE64 IMAGE DATA TRUNCATED]")
+                    if item.get('type') in ['image_url', 'inline_data']:
+                        print(f"    Item {j}: {item.get('type')} - [BASE64 IMAGE DATA TRUNCATED]")
                     else:
                         print(f"    Item {j}: {type(item)} - {str(item)[:50]}{'...' if len(str(item)) > 50 else ''}")
             else:
@@ -745,6 +769,8 @@ class CustomAPIHandler(APIHandler):
                 for item in message['content']:
                     if item.get('type') == 'image_url':
                         item['image_url']['url'] = item['image_url']['url'][:100] + "...[TRUNCATED]"
+                    elif item.get('type') == 'inline_data':
+                        item['inline_data']['data'] = item['inline_data']['data'][:100] + "...[TRUNCATED]"
         
         print(json.dumps(log_payload, indent=2, ensure_ascii=False))
         print("\033[35m" + "=" * 60 + "\033[0m")
