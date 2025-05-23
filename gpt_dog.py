@@ -319,10 +319,6 @@ if with_img:
         print("\033[33mWARNING: Vilib module not found. Running without camera support.\033[0m")
         with_img = False
         vilib_available = False
-    except Exception as e:
-        print(f"\033[33mWARNING: Error initializing Vilib: {e}. Running without camera support.\033[0m")
-        with_img = False
-        vilib_available = False
 
 # PyAudio and speech recognition setup
 # =================================================================
@@ -381,8 +377,8 @@ def action_handler():
                 last_action_time = time.time()
                 action_interval = random.randint(2, 6)
         elif _state == 'think':
-            # action_flow.run('think')
-            # last_action_time = time.time()
+            action_flow.run('think')
+            last_action_time = time.time()
             pass
         elif _state == 'actions':
             with action_lock:
@@ -631,8 +627,22 @@ def main():
         print("\033[33m  - Windows: pip install PyAudio\033[0m")
         print("\033[33m  - Linux: sudo apt-get install python3-pyaudio\033[0m")
         print("\033[33m  - macOS: pip install PyAudio\033[0m")
+    elif input_mode == 'voice':
+        # Check for FLAC when voice mode is enabled
+        if not install_flac_if_needed():
+            print("\033[33mVoice recognition may not work properly without FLAC.\033[0m")
+            print("\033[33mConsider switching to keyboard mode with --keyboard flag.\033[0m")
     
     print("\033[32m" + "=" * 60 + "\033[0m")
+
+    # Simple TTS directory setup
+    tts_dir = os.path.join(current_path, "tts")
+    if not os.path.exists(tts_dir):
+        os.makedirs(tts_dir)
+        print(f"\033[32mCreated TTS directory: {tts_dir}\033[0m")
+
+    # Test basic functionality
+    test_functionality()
 
     speak_thread.start()
     action_thread.start()
@@ -664,14 +674,35 @@ def main():
                     _result = openai_helper.stt(audio, language=LANGUAGE)
                 else:
                     # Use speech_recognition's built-in STT if API doesn't support it
-                    _result = recognizer.recognize_google(audio)
+                    try:
+                        _result = recognizer.recognize_google(audio)
+                    except Exception as stt_error:
+                        print(f"\033[31mGoogle STT error: {stt_error}\033[0m")
+                        # Try Whisper API as fallback if available
+                        try:
+                            if OPENAI_API_KEY:
+                                _result = recognizer.recognize_whisper_api(audio, api_key=OPENAI_API_KEY)
+                            else:
+                                raise Exception("No OpenAI API key for Whisper fallback")
+                        except Exception as whisper_error:
+                            print(f"\033[31mWhisper fallback error: {whisper_error}\033[0m")
+                            _result = False
+                            
                 gray_print(f"stt takes: {time.time() - st:.3f} s")
 
                 if _result == False or _result == "":
                     print() # new line
                     continue
             except Exception as e:
-                print(f"\033[31mError during voice recognition: {e}\033[0m")
+                error_msg = str(e).lower()
+                if "flac" in error_msg:
+                    print(f"\033[31mFLAC conversion error: {e}\033[0m")
+                    print("\033[33mTo fix this issue, install FLAC:\033[0m")
+                    print("\033[33m  - Ubuntu/Debian: sudo apt-get install flac\033[0m")
+                    print("\033[33m  - Windows: Download FLAC from https://xiph.org/flac/download.html\033[0m")
+                    print("\033[33m  - macOS: brew install flac\033[0m")
+                else:
+                    print(f"\033[31mError during voice recognition: {e}\033[0m")
                 print("\033[33mSwitching to keyboard input mode\033[0m")
                 input_mode = 'keyboard'
                 continue
@@ -706,12 +737,32 @@ def main():
         # Process request through the appropriate API
         if with_img and 'vilib_available' in globals() and vilib_available:
             try:
-                img_path = './img_imput.jpg'
+                # Use tts directory for image storage to avoid permission issues
+                img_path = os.path.join(current_path, 'tts', 'img_input.jpg')
                 cv2.imwrite(img_path, Vilib.img)
+                
+                # Check if image was actually written
+                if not os.path.exists(img_path):
+                    raise Exception("Failed to write image file")
+                
+                # Use the appropriate API handler for images
                 if api_config['provider'] == 'openai':
                     response = openai_helper.dialogue_with_img(_result, img_path)
                 else:
-                    response = api_handler.dialogue_with_img(_result, img_path)
+                    # For non-OpenAI providers, check if they support images
+                    if hasattr(api_handler, 'dialogue_with_img'):
+                        response = api_handler.dialogue_with_img(_result, img_path)
+                    else:
+                        print(f"\033[33mImage processing not supported by {api_config['provider']} provider, using text-only\033[0m")
+                        response = api_handler.dialogue(_result)
+                        
+                # Clean up image file after processing
+                try:
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
+                except:
+                    pass  # Don't fail if cleanup fails
+                    
             except Exception as e:
                 print(f"\033[31mError with image capture: {e}\033[0m")
                 # Fallback to text-only if image fails
@@ -720,6 +771,7 @@ def main():
                 else:
                     response = api_handler.dialogue(_result)
         else:
+            # Text-only processing
             if api_config['provider'] == 'openai':
                 response = openai_helper.dialogue(_result)
             else:
@@ -764,25 +816,11 @@ def main():
                 _time = time.strftime("%y-%m-%d_%H-%M-%S", time.localtime())
                 _tts_f = f"./tts/{_time}_raw.wav"
                 
-                # Ensure TTS directory exists
-                if not os.path.exists("./tts"):
-                    os.makedirs("./tts")
-
+                # Simple TTS call without complex permission handling
                 try:
-                    if api_config['provider'] == 'openai':
-                        _status = openai_helper.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
-                    elif hasattr(api_handler, 'text_to_speech'):
-                        _status = api_handler.text_to_speech(answer, _tts_f, TTS_VOICE, response_format='wav')
-                    else:
-                        # Fallback to direct OpenAI TTS for other providers
-                        _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
+                    _status = simple_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
                 except Exception as e:
                     print(f"\033[31mError with TTS: {e}\033[0m")
-                    # Try fallback to direct OpenAI TTS
-                    try:
-                        _status = direct_openai_tts(answer, _tts_f, TTS_VOICE, 'wav')
-                    except Exception as e:
-                        print(f"\033[31mError with fallback TTS: {e}\033[0m")
                 
                 if _status:
                     tts_file = f"./tts/{_time}_{VOLUME_DB}dB.wav"
@@ -835,54 +873,44 @@ def main():
             print(f'actions or TTS error: {e}')
 
 
-# Add a function for direct OpenAI TTS
+# Add a simplified TTS function based on the working original
 # =================================================================
-def direct_openai_tts(text, output_file, voice='shimmer', response_format='wav'):
+def simple_openai_tts(text, output_file, voice='shimmer', response_format='wav'):
     """
-    Generate speech directly from OpenAI's TTS API regardless of which provider is used for chat.
+    Simple OpenAI TTS function based on the working original code.
     """
     try:
-        # Ensure TTS directory exists
+        from openai import OpenAI
+        
+        # Ensure TTS directory exists (simple version)
         tts_dir = os.path.dirname(output_file)
         if not os.path.exists(tts_dir):
             os.makedirs(tts_dir)
         
-        # Import OpenAI client directly
-        from openai import OpenAI
-        
-        # Use OpenAI client directly for TTS with OPENAI_API_KEY from keys.py
+        # Use OpenAI client directly for TTS
         client = OpenAI(api_key=OPENAI_API_KEY)
         
-        try:
-            with client.audio.speech.with_streaming_response.create(
-                model="tts-1",
-                voice=voice,
-                input=text,
-                response_format=response_format,
-            ) as response:
-                response.stream_to_file(output_file)
-            
-            return os.path.exists(output_file)
-        except Exception as e:
-            print(f"\033[31mError streaming TTS to file: {e}\033[0m")
-            # Try alternate method
-            try:
-                speech_file = client.audio.speech.create(
-                    model="tts-1",
-                    voice=voice,
-                    input=text,
-                    response_format=response_format
-                )
-                
-                with open(output_file, "wb") as file:
-                    file.write(speech_file.content)
-                
-                return os.path.exists(output_file)
-            except Exception as e:
-                print(f"\033[31mError with alternate TTS method: {e}\033[0m")
-                return False
+        # Use the same method as the original working code
+        with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice=voice,
+            input=text,
+            response_format=response_format,
+        ) as response:
+            response.stream_to_file(output_file)
+        
+        return os.path.exists(output_file)
+        
     except Exception as e:
-        print(f"\033[31mError with direct OpenAI TTS: {e}\033[0m")
+        print(f"Direct TTS error: {e}")
+        
+        # Fallback to using the existing openai_helper if available
+        try:
+            if api_config['provider'] == 'openai' and 'openai_helper' in globals() and openai_helper:
+                return openai_helper.text_to_speech(text, output_file, voice, response_format=response_format)
+        except Exception as e2:
+            print(f"Fallback TTS error: {e2}")
+        
         return False
 
 # Verify OpenAI API key for TTS
@@ -1674,6 +1702,128 @@ def get_api_parameters(preset):
         "top_p": 1.0,
         "thinking_tokens": None
     })
+
+# Debug function to test TTS and image functionality
+# =================================================================
+def test_functionality():
+    """Test basic TTS and image functionality"""
+    print("\n\033[32m=== Testing Basic Functionality ===\033[0m")
+    
+    # Test TTS directory creation
+    try:
+        tts_dir = os.path.join(current_path, "tts")
+        if not os.path.exists(tts_dir):
+            os.makedirs(tts_dir)
+        print(f"\033[32m✓ TTS directory accessible: {tts_dir}\033[0m")
+    except Exception as e:
+        print(f"\033[31m✗ TTS directory error: {e}\033[0m")
+    
+    # Test OpenAI API key
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        print("\033[32m✓ OpenAI client initialized\033[0m")
+    except Exception as e:
+        print(f"\033[31m✗ OpenAI client error: {e}\033[0m")
+    
+    # Test FLAC availability for voice recognition
+    if input_mode == 'voice':
+        try:
+            import subprocess
+            result = subprocess.run(['flac', '--version'], capture_output=True, text=True)
+            if result.returncode == 0:
+                print("\033[32m✓ FLAC utility available for voice recognition\033[0m")
+            else:
+                print("\033[31m✗ FLAC utility not working properly\033[0m")
+        except FileNotFoundError:
+            print("\033[31m✗ FLAC utility not found - voice recognition may fail\033[0m")
+            print("\033[33m  Install with: sudo apt-get install flac (Linux) or brew install flac (macOS)\033[0m")
+        except Exception as e:
+            print(f"\033[33m⚠ Could not test FLAC: {e}\033[0m")
+    else:
+        print("\033[33m⚠ Voice recognition not enabled\033[0m")
+    
+    # Test image capability if enabled
+    if with_img:
+        try:
+            import cv2
+            if 'vilib_available' in globals() and vilib_available:
+                print("\033[32m✓ Image capture available (Vilib)\033[0m")
+                
+                # Test image write permissions
+                test_img_path = os.path.join(current_path, 'tts', 'test_image.jpg')
+                try:
+                    import numpy as np
+                    test_img = np.zeros((100, 100, 3), dtype=np.uint8)
+                    cv2.imwrite(test_img_path, test_img)
+                    if os.path.exists(test_img_path):
+                        os.remove(test_img_path)
+                        print("\033[32m✓ Image write permissions OK\033[0m")
+                    else:
+                        print("\033[31m✗ Image write test failed\033[0m")
+                except Exception as img_error:
+                    print(f"\033[31m✗ Image write test error: {img_error}\033[0m")
+            else:
+                print("\033[33m⚠ Image capture not available\033[0m")
+        except Exception as e:
+            print(f"\033[31m✗ Image capability error: {e}\033[0m")
+    else:
+        print("\033[33m⚠ Image capture disabled\033[0m")
+    
+    print("\033[32m" + "=" * 40 + "\033[0m\n")
+
+# Helper function to install FLAC if needed
+# =================================================================
+def install_flac_if_needed():
+    """Check for FLAC and offer to install it if missing"""
+    try:
+        import subprocess
+        import platform
+        
+        # Test if FLAC is available
+        result = subprocess.run(['flac', '--version'], capture_output=True, text=True)
+        if result.returncode == 0:
+            return True  # FLAC is available
+            
+    except FileNotFoundError:
+        pass  # FLAC not found, continue with installation offer
+    except Exception:
+        return False  # Some other error, can't help
+    
+    # FLAC not found, offer to install
+    system = platform.system().lower()
+    
+    if system == "linux":
+        try:
+            # Check if we're on a Debian/Ubuntu system
+            result = subprocess.run(['which', 'apt-get'], capture_output=True)
+            if result.returncode == 0:
+                print("\033[33mFLAC not found. Would you like to install it now? (y/n)\033[0m")
+                choice = input().strip().lower()
+                if choice == 'y' or choice == 'yes':
+                    print("\033[32mInstalling FLAC...\033[0m")
+                    result = subprocess.run(['sudo', 'apt-get', 'install', '-y', 'flac'], 
+                                          capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print("\033[32m✓ FLAC installed successfully!\033[0m")
+                        return True
+                    else:
+                        print(f"\033[31m✗ Failed to install FLAC: {result.stderr}\033[0m")
+                        return False
+        except Exception as e:
+            print(f"\033[33mCould not auto-install FLAC: {e}\033[0m")
+    
+    # Manual installation instructions
+    print("\033[33mPlease install FLAC manually:\033[0m")
+    if system == "linux":
+        print("\033[33m  Ubuntu/Debian: sudo apt-get install flac\033[0m")
+        print("\033[33m  CentOS/RHEL: sudo yum install flac\033[0m")
+    elif system == "darwin":  # macOS
+        print("\033[33m  macOS: brew install flac\033[0m")
+    elif system == "windows":
+        print("\033[33m  Windows: Download from https://xiph.org/flac/download.html\033[0m")
+    
+    return False
 
 if __name__ == "__main__":
     try:
