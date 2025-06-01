@@ -344,35 +344,8 @@ def speak_hanlder():
             _isloaded = speech_loaded
         if _isloaded:
             gray_print('speak start')
-            
-            # Check if audio is disabled
-            if not with_audio:
-                gray_print('speak skipped (audio disabled)')
-                with speech_lock:
-                    speech_loaded = False
-                time.sleep(0.05)
-                continue
-            
-            # Try primary audio playback
-            try:
-                my_dog.speak_block(tts_file)
-                gray_print('speak done')
-            except Exception as e:
-                # If primary playback fails (e.g., needs sudo), try alternatives
-                error_msg = str(e).lower()
-                if "permission" in error_msg or "sudo" in error_msg or "access" in error_msg:
-                    gray_print(f'Primary audio failed: {e}')
-                    gray_print('Trying alternative audio playback...')
-                    
-                    # Try alternative audio playback methods
-                    if try_alternative_audio_playback(tts_file):
-                        gray_print('speak done (alternative method)')
-                    else:
-                        print(f"\033[31mAudio playback failed. Consider running with: sudo python3 {sys.argv[0]}\033[0m")
-                else:
-                    # For other errors, just print them
-                    print(f"\033[31mAudio playback error: {e}\033[0m")
-            
+            my_dog.speak_block(tts_file)
+            gray_print('speak done')
             with speech_lock:
                 speech_loaded = False
         time.sleep(0.05)
