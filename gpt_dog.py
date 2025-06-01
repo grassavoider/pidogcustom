@@ -353,9 +353,25 @@ def speak_hanlder():
                 time.sleep(0.05)
                 continue
             
-            # Simple audio playback like the original
-            my_dog.speak_block(tts_file)
-            gray_print('speak done')
+            # Try primary audio playback
+            try:
+                my_dog.speak_block(tts_file)
+                gray_print('speak done')
+            except Exception as e:
+                # If primary playback fails (e.g., needs sudo), try alternatives
+                error_msg = str(e).lower()
+                if "permission" in error_msg or "sudo" in error_msg or "access" in error_msg:
+                    gray_print(f'Primary audio failed: {e}')
+                    gray_print('Trying alternative audio playback...')
+                    
+                    # Try alternative audio playback methods
+                    if try_alternative_audio_playback(tts_file):
+                        gray_print('speak done (alternative method)')
+                    else:
+                        print(f"\033[31mAudio playback failed. Consider running with: sudo python3 {sys.argv[0]}\033[0m")
+                else:
+                    # For other errors, just print them
+                    print(f"\033[31mAudio playback error: {e}\033[0m")
             
             with speech_lock:
                 speech_loaded = False
@@ -634,6 +650,16 @@ def main():
     # Print setup information
     print(f"\033[32mInput Mode: {input_mode}\033[0m")
     print(f"\033[32mAudio Playback: {'Enabled' if with_audio else 'Disabled'}\033[0m")
+    print(f"\033[32mImage Capture: {'Enabled' if with_img else 'Disabled'}\033[0m")
+    
+    # Warn about potential vision issues with proxies
+    if with_img and api_config['provider'] == 'custom':
+        is_gemini_like = ('google' in api_config.get('api_url', '').lower() or 
+                         'gemini' in api_config.get('model_name', '').lower() or
+                         'models/' in api_config.get('model_name', ''))
+        if is_gemini_like:
+            print(f"\033[33mNOTE: Some proxies don't support vision for Gemini models\033[0m")
+            print(f"\033[33mIf image requests fail, run with: --no-img\033[0m")
     
     if not speech_recognition_available:
         print("\033[33mNOTE: Voice input is not available because PyAudio is not installed.\033[0m")
@@ -759,6 +785,16 @@ def main():
                 if not os.path.exists(img_path):
                     raise Exception("Failed to write image file")
                 
+                # Check if this is a Gemini model that might not support vision through proxy
+                is_gemini_proxy = (api_config['provider'] == 'custom' and 
+                                 ('google' in api_config.get('api_url', '').lower() or 
+                                  'gemini' in api_config.get('model_name', '').lower() or
+                                  'models/' in api_config.get('model_name', '')))
+                
+                if is_gemini_proxy:
+                    print(f"\033[33mDetected Gemini model through proxy - some proxies don't support vision\033[0m")
+                    print(f"\033[33mTrying image request first, will fallback to text-only if it fails\033[0m")
+                
                 # Use the appropriate API handler for images
                 if api_config['provider'] == 'openai':
                     response = openai_helper.dialogue_with_img(_result, img_path)
@@ -778,7 +814,13 @@ def main():
                     pass  # Don't fail if cleanup fails
                     
             except Exception as e:
-                print(f"\033[31mError with image capture: {e}\033[0m")
+                error_msg = str(e).lower()
+                if 'validation failed' in error_msg and 'content' in error_msg:
+                    print(f"\033[33mProxy rejected image request (likely no vision support): {e}\033[0m")
+                    print(f"\033[33mFalling back to text-only for this model/proxy combination\033[0m")
+                else:
+                    print(f"\033[31mError with image capture: {e}\033[0m")
+                    
                 # Fallback to text-only if image fails
                 if api_config['provider'] == 'openai':
                     response = openai_helper.dialogue(_result)
